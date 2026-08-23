@@ -1,0 +1,50 @@
+{
+  "name": "gestao-clientes-desktop",
+  "version": "1.0.0",
+  "description": "Aplicativo desktop de gestão de clientes e pagamentos.",
+  "main": "electron/main.cjs",
+  "author": "Gestão de Clientes",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "dist": "electron-builder --win",
+    "dist:dir": "electron-builder --win --dir"
+  },
+  "devDependencies": {
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.gestaoclientes.desktop",
+    "productName": "Gestão de Clientes",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "index.html",
+      "404.html",
+      "assets/**/*",
+      "electron/**/*",
+      "package.json",
+      "README.md"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "Gestao-de-Clientes-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Gestão de Clientes"
+    }
+  }
+}
