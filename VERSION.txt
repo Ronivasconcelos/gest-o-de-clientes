@@ -1,0 +1,2 @@
+2026-08-23
+Botões Backup PDF e Instalar aplicativo alinhados e funcionalidade de PDF restaurada.
