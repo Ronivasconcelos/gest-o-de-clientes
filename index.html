@@ -661,7 +661,7 @@ header {
       <div class="form-row">
         <div class="form-group">
           <label class="form-label">Nome completo <span class="required">*</span></label>
-          <input type="text" class="form-input" id="clientName" required>
+          <input type="text" class="form-input" id="clientName" required oninput="updatePhotoPreview()">
         </div>
         <div class="form-group">
           <label class="form-label">CPF</label>
@@ -758,7 +758,7 @@ let currentAlpha = null;
 let selectedId = null;
 let editingId = null;
 let currentPhoto = null;
-let pendingConfirm = null;
+let confirmCb = null;
 
 // ===== Persistence =====
 function loadClients() {
@@ -947,11 +947,12 @@ function renderPayments(c) {
   `).join('');
 }
 
-// ===== Modal =====
+// ===== Modal & Form Management =====
 function openModal(id) {
   editingId = id || null;
   currentPhoto = null;
   document.getElementById('modalTitle').textContent = id ? 'Editar cliente' : 'Novo cliente';
+  
   if (id) {
     const c = clients.find(x => x.id === id);
     if (!c) return;
@@ -965,10 +966,9 @@ function openModal(id) {
     document.getElementById('clientDate').value = c.date || '';
     document.getElementById('clientValue').value = c.value || '';
     document.getElementById('clientStatus').value = c.status || 'paid';
-    document.getElementById('clientCategory').value = c.category || 'Standard';
+    document.getElementById('clientCategory').value = c.category || 'Premium';
     document.getElementById('clientNotes').value = c.notes || '';
     currentPhoto = c.photo || null;
-    updatePhotoPreview();
   } else {
     document.getElementById('clientName').value = '';
     document.getElementById('clientCPF').value = '';
@@ -980,254 +980,216 @@ function openModal(id) {
     document.getElementById('clientDate').value = new Date().toISOString().split('T')[0];
     document.getElementById('clientValue').value = '';
     document.getElementById('clientStatus').value = 'paid';
-    document.getElementById('clientCategory').value = 'Standard';
+    document.getElementById('clientCategory').value = 'Premium';
     document.getElementById('clientNotes').value = '';
     currentPhoto = null;
-    updatePhotoPreview();
   }
+  
+  updatePhotoPreview();
   document.getElementById('clientModal').classList.add('active');
 }
+
 function closeModal() {
   document.getElementById('clientModal').classList.remove('active');
-  editingId = null;
 }
 
-function updatePhotoPreview() {
-  const el = document.getElementById('photoPreview');
-  if (currentPhoto) el.innerHTML = '<img src="'+currentPhoto+'">';
-  else el.innerHTML = '👤';
+function saveClient() {
+  const name = document.getElementById('clientName').value.trim();
+  const email = document.getElementById('clientEmail').value.trim();
+  
+  if (!name || !email) {
+    showToast('Nome e e-mail são obrigatórios!', 'error');
+    return;
+  }
+
+  const newClient = {
+    id: editingId || genId(),
+    name: name,
+    cpf: document.getElementById('clientCPF').value,
+    email: email,
+    phone: document.getElementById('clientPhone').value,
+    company: document.getElementById('clientCompany').value,
+    role: document.getElementById('clientRole').value,
+    address: document.getElementById('clientAddress').value,
+    date: document.getElementById('clientDate').value,
+    value: parseFloat(document.getElementById('clientValue').value) || 0,
+    status: document.getElementById('clientStatus').value,
+    category: document.getElementById('clientCategory').value,
+    notes: document.getElementById('clientNotes').value,
+    photo: currentPhoto,
+    payments: editingId ? (clients.find(c => c.id === editingId).payments || []) : []
+  };
+
+  if (editingId) {
+    const idx = clients.findIndex(c => c.id === editingId);
+    if (idx > -1) clients[idx] = newClient;
+  } else {
+    clients.push(newClient);
+  }
+
+  saveClients();
+  closeModal();
+  renderAlphaIndex();
+  renderClientList();
+  updateStats();
+  
+  if (selectedId === editingId) selectClient(selectedId);
+  showToast('Cliente salvo com sucesso!', 'success');
 }
-function handlePhotoUpload(e) {
-  const file = e.target.files[0];
+
+function editCurrent() {
+  if (selectedId) openModal(selectedId);
+}
+
+function deleteCurrent() {
+  if (!selectedId) return;
+  openConfirm('Tem certeza que deseja excluir permanentemente este cliente?', () => {
+    clients = clients.filter(c => c.id !== selectedId);
+    selectedId = null;
+    saveClients();
+    
+    document.getElementById('detailContent').style.display = 'none';
+    document.getElementById('emptyState').style.display = 'block';
+    
+    renderAlphaIndex();
+    renderClientList();
+    updateStats();
+    showToast('Cliente excluído com sucesso.', 'success');
+  });
+}
+
+// ===== Photos =====
+function updatePhotoPreview() {
+  const preview = document.getElementById('photoPreview');
+  if (currentPhoto) {
+    preview.innerHTML = '<img src="' + currentPhoto + '">';
+  } else {
+    const name = document.getElementById('clientName').value;
+    preview.innerHTML = getInitials(name || '?');
+  }
+}
+
+function handlePhotoUpload(event) {
+  const file = event.target.files[0];
   if (!file) return;
-  if (!file.type.startsWith('image/')) { toast('Selecione uma imagem válida','error'); return; }
+  
   const reader = new FileReader();
-  reader.onload = (ev) => {
-    // Compress image
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const size = 200;
-      canvas.width = size; canvas.height = size;
-      const ctx = canvas.getContext('2d');
-      const scale = Math.max(size/img.width, size/img.height);
-      const w = img.width*scale, h = img.height*scale;
-      ctx.drawImage(img, (size-w)/2, (size-h)/2, w, h);
-      currentPhoto = canvas.toDataURL('image/jpeg', 0.8);
-      updatePhotoPreview();
-    };
-    img.src = ev.target.result;
+  reader.onload = function(e) {
+    currentPhoto = e.target.result;
+    updatePhotoPreview();
   };
   reader.readAsDataURL(file);
 }
+
 function removePhoto() {
   currentPhoto = null;
   document.getElementById('photoInput').value = '';
   updatePhotoPreview();
 }
 
-function saveClient() {
-  const name = document.getElementById('clientName').value.trim();
-  const email = document.getElementById('clientEmail').value.trim();
-  if (!name) { toast('Nome é obrigatório','error'); return; }
-  if (!email) { toast('E-mail é obrigatório','error'); return; }
-
-  const data = {
-    name,
-    cpf: document.getElementById('clientCPF').value.trim(),
-    email,
-    phone: document.getElementById('clientPhone').value.trim(),
-    company: document.getElementById('clientCompany').value.trim(),
-    role: document.getElementById('clientRole').value.trim(),
-    address: document.getElementById('clientAddress').value.trim(),
-    date: document.getElementById('clientDate').value,
-    value: parseFloat(document.getElementById('clientValue').value) || 0,
-    status: document.getElementById('clientStatus').value,
-    category: document.getElementById('clientCategory').value,
-    notes: document.getElementById('clientNotes').value.trim(),
-    photo: currentPhoto
-  };
-
-  if (editingId) {
-    const idx = clients.findIndex(c => c.id === editingId);
-    if (idx >= 0) {
-      clients[idx] = { ...clients[idx], ...data };
-      toast('Cliente atualizado com sucesso','success');
-    }
-  } else {
-    clients.push({ id: genId(), ...data, payments: [] });
-    toast('Cliente cadastrado com sucesso','success');
-  }
-  saveClients();
-  updateStats();
-  renderAlphaIndex();
-  renderClientList();
-  closeModal();
-  if (editingId) selectClient(editingId);
-}
-
-function editCurrent() {
-  if (selectedId) openModal(selectedId);
-}
-function deleteCurrent() {
-  if (!selectedId) return;
-  const c = clients.find(x => x.id === selectedId);
-  if (!c) return;
-  showConfirm(`Deseja realmente excluir <strong>${escapeHtml(c.name)}</strong>?`, () => {
-    clients = clients.filter(x => x.id !== selectedId);
-    selectedId = null;
-    saveClients();
-    updateStats();
-    renderAlphaIndex();
-    renderClientList();
-    document.getElementById('emptyState').style.display = 'block';
-    document.getElementById('detailContent').style.display = 'none';
-    toast('Cliente excluído','success');
-  });
-}
-
 // ===== Payments =====
 function addPayment() {
   if (!selectedId) return;
+  const amountStr = prompt('Digite o valor do pagamento (Ex: 1500.00):');
+  if (amountStr === null) return;
+  
+  const amount = parseFloat(amountStr.replace(',', '.'));
+  if (isNaN(amount) || amount <= 0) {
+    showToast('Valor de pagamento inválido.', 'error');
+    return;
+  }
+
   const c = clients.find(x => x.id === selectedId);
   if (!c) return;
-  const amount = parseFloat(prompt('Valor do pagamento (R$):', c.value || '0'));
-  if (isNaN(amount) || amount <= 0) { toast('Valor inválido','error'); return; }
-  const date = prompt('Data (AAAA-MM-DD):', new Date().toISOString().split('T')[0]);
-  if (!date) return;
   if (!c.payments) c.payments = [];
-  c.payments.push({ id: genId(), date, amount });
-  c.status = 'paid';
+  
+  c.payments.push({
+    id: genId(),
+    date: new Date().toISOString().split('T')[0],
+    amount: amount
+  });
+  
   saveClients();
+  renderPayments(c);
   updateStats();
-  renderClientList();
-  selectClient(selectedId);
-  toast('Pagamento registrado','success');
+  showToast('Pagamento registrado com sucesso!', 'success');
 }
+
 function deletePayment(pid) {
-  if (!selectedId) return;
-  const c = clients.find(x => x.id === selectedId);
-  if (!c) return;
-  showConfirm('Excluir este pagamento?', () => {
-    c.payments = (c.payments||[]).filter(p => p.id !== pid);
-    saveClients();
-    selectClient(selectedId);
-    toast('Pagamento excluído','success');
+  openConfirm('Tem certeza que deseja excluir este pagamento?', () => {
+    const c = clients.find(x => x.id === selectedId);
+    if (c && c.payments) {
+      c.payments = c.payments.filter(p => p.id !== pid);
+      saveClients();
+      renderPayments(c);
+      updateStats();
+      showToast('Pagamento removido.', 'success');
+    }
   });
 }
 
-// ===== Confirm =====
-function showConfirm(text, action) {
-  document.getElementById('confirmText').innerHTML = text;
-  pendingConfirm = action;
+// ===== Confirm Modal =====
+function openConfirm(msg, callback) {
+  document.getElementById('confirmText').textContent = msg;
+  confirmCb = callback;
   document.getElementById('confirmModal').classList.add('active');
 }
+
 function closeConfirm() {
   document.getElementById('confirmModal').classList.remove('active');
-  pendingConfirm = null;
+  confirmCb = null;
 }
+
 function confirmAction() {
-  if (pendingConfirm) pendingConfirm();
+  if (confirmCb) confirmCb();
   closeConfirm();
 }
 
-// ===== Backup PDF =====
-function backupPDF() {
-  const w = window.open('', '_blank');
-  if (!w) { toast('Pop-up bloqueado. Permita pop-ups para este site.','error'); return; }
-  let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Backup PDF - Gestão de Clientes</title>
-  <style>body{font-family:Arial,sans-serif;padding:2rem;color:#1e293b;}
-  h1{color:#1e3a8a;border-bottom:2px solid #1e3a8a;padding-bottom:0.5rem;}
-  table{width:100%;border-collapse:collapse;margin-top:1rem;}
-  th,td{border:1px solid #e2e8f0;padding:0.5rem;text-align:left;font-size:0.85rem;}
-  th{background:#1e3a8a;color:white;}
-  tr:nth-child(even){background:#f8fafc;}
-  .stats{display:flex;gap:1rem;margin:1rem 0;flex-wrap:wrap;}
-  .stat{background:#f1f5f9;padding:1rem;border-radius:0.5rem;flex:1;min-width:150px;}
-  .stat-label{font-size:0.75rem;color:#64748b;text-transform:uppercase;}
-  .stat-value{font-size:1.5rem;font-weight:700;color:#1e3a8a;}
-  @media print{body{padding:0.5rem;}}</style></head><body>
-  <h1>📊 Relatório de Clientes</h1>
-  <p>Gerado em: ${new Date().toLocaleString('pt-BR')}</p>
-  <div class="stats">
-    <div class="stat"><div class="stat-label">Total</div><div class="stat-value">${clients.length}</div></div>
-    <div class="stat"><div class="stat-label">Pagos</div><div class="stat-value">${clients.filter(c=>c.status==='paid').length}</div></div>
-    <div class="stat"><div class="stat-label">Pendentes</div><div class="stat-value">${clients.filter(c=>c.status==='pending').length}</div></div>
-    <div class="stat"><div class="stat-label">Receita Mensal</div><div class="stat-value">${formatCurrency(clients.reduce((s,c)=>s+(parseFloat(c.value)||0),0))}</div></div>
-  </div>
-  <table><thead><tr><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Empresa</th><th>Valor</th><th>Status</th><th>Categoria</th></tr></thead><tbody>`;
-  clients.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(c => {
-    html += `<tr><td>${escapeHtml(c.name||'')}</td><td>${escapeHtml(c.email||'')}</td><td>${escapeHtml(c.phone||'')}</td><td>${escapeHtml(c.company||'')}</td><td>${formatCurrency(c.value)}</td><td>${c.status==='paid'?'Pago':'Pendente'}</td><td>${escapeHtml(c.category||'')}</td></tr>`;
-  });
-  html += `</tbody></table></body></html>`;
-  w.document.write(html);
-  w.document.close();
-  setTimeout(() => { w.print(); }, 500);
-  toast('Relatório PDF aberto','success');
+// ===== UI Extras & Actions =====
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.textContent = message;
+  
+  container.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
 }
 
-// ===== Backup JSON =====
-function backupJSON() {
-  const data = JSON.stringify(clients, null, 2);
-  const blob = new Blob([data], {type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'gestao-clientes-backup-' + new Date().toISOString().split('T')[0] + '.json';
-  a.click();
-  URL.revokeObjectURL(url);
-  toast('Backup JSON baixado','success');
-}
-
-// ===== Print =====
 function printClient() {
   if (!selectedId) return;
   window.print();
 }
 
-// ===== Install =====
+function backupJSON() {
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(clients));
+  const downloadAnchorNode = document.createElement('a');
+  downloadAnchorNode.setAttribute("href", dataStr);
+  downloadAnchorNode.setAttribute("download", "gestao_clientes_backup.json");
+  document.body.appendChild(downloadAnchorNode);
+  downloadAnchorNode.click();
+  downloadAnchorNode.remove();
+}
+
+function backupPDF() {
+  showToast('Para salvar como PDF, use o botão "Imprimir" e selecione "Salvar como PDF".', 'warning');
+}
+
 function installApp() {
-  toast('Use Ctrl+D para adicionar aos favoritos ou instale via PWA','warning');
+  showToast('Para instalar, use a opção "Adicionar à Tela Inicial" no menu do seu navegador.', 'warning');
 }
 
-// ===== Restore sample data =====
-function restoreSample() {
-  showConfirm('Restaurar dados de exemplo? Os dados atuais serão substituídos.', () => {
-    clients = getSampleData();
-    saveClients();
-    selectedId = null;
-    updateStats();
-    renderAlphaIndex();
-    renderClientList();
-    document.getElementById('emptyState').style.display = 'block';
-    document.getElementById('detailContent').style.display = 'none';
-    toast('Dados de exemplo restaurados','success');
-  });
-}
-
-// ===== Toast =====
-function toast(msg, type) {
-  const container = document.getElementById('toastContainer');
-  const el = document.createElement('div');
-  el.className = 'toast ' + (type||'');
-  el.textContent = msg;
-  container.appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(100%)'; el.style.transition = 'all 0.3s'; }, 2500);
-  setTimeout(() => el.remove(), 2800);
-}
-
-// ===== Keyboard shortcuts =====
-document.addEventListener('keydown', (e) => {
-  if (e.ctrlKey && e.shiftKey && e.key === 'B') { e.preventDefault(); backupJSON(); }
-  if (e.ctrlKey && e.shiftKey && e.key === 'R') { e.preventDefault(); restoreSample(); }
-  if (e.key === 'Escape') { closeModal(); closeConfirm(); }
+// ===== Initialization =====
+document.addEventListener('DOMContentLoaded', () => {
+  loadClients();
+  updateStats();
+  renderAlphaIndex();
+  renderClientList();
 });
-
-// ===== Init =====
-loadClients();
-updateStats();
-renderAlphaIndex();
-renderClientList();
 </script>
 </body>
 </html>
